@@ -1,0 +1,62 @@
+networks:
+  glitchtip-network:
+    name: glitchtip-network
+    driver: bridge
+
+volumes:
+  glitchtip-postgres-data:
+  glitchtip-uploads:
+
+x-environment: &default-environment
+  DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@glitchtip-postgres:5432/${POSTGRES_DB}
+  VALKEY_URL: redis://glitchtip-valkey:6379
+  SECRET_KEY: "${SECRET_KEY:?Definí SECRET_KEY en tu .env, ej. openssl rand -hex 32}"
+  EMAIL_URL: ${EMAIL_URL:-consolemail://}
+  GLITCHTIP_DOMAIN: "${GLITCHTIP_DOMAIN:?Definí GLITCHTIP_DOMAIN en tu .env, ej. https://glitchtip.tu-dominio.com}"
+  DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL}
+  ENABLE_ADMIN: "False"
+  ENABLE_OPENAPI: "False"
+
+services:
+  glitchtip-postgres:
+    image: postgres:18-alpine
+    container_name: glitchtip-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - glitchtip-postgres-data:/var/lib/postgresql
+    networks:
+      - glitchtip-network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  glitchtip-valkey:
+    image: valkey/valkey:9-alpine
+    container_name: glitchtip-valkey
+    restart: unless-stopped
+    networks:
+      - glitchtip-network
+
+  glitchtip-web:
+    image: glitchtip/glitchtip:6
+    container_name: glitchtip-web
+    restart: unless-stopped
+    depends_on:
+      glitchtip-postgres:
+        condition: service_healthy
+      glitchtip-valkey:
+        condition: service_started
+    environment:
+      <<: *default-environment
+      SERVER_ROLE: all_in_one
+    volumes:
+      - glitchtip-uploads:/code/uploads
+    networks:
+      - glitchtip-network
+    # Sin ports: solo accesible vía glitchtip-network, que se une nginx-reverse-proxy (red externa desde ese lado)
