@@ -30,7 +30,7 @@ Imagen oficial `glitchtip/glitchtip:6` con `SERVER_ROLE: all_in_one` (web + work
 
 ## Producción
 
-En producción **no se publica ningún puerto al host** — `compose.prod.yml` deja `glitchtip-web` alcanzable solo vía la red Docker `glitchtip-network`, para que un reverse proxy central (nginx u otro) se una a esa red y la resuelva por nombre de contenedor (`glitchtip-web:8000`), en vez de necesitar loopback.
+En producción, `glitchtip-web` es alcanzable principalmente vía la red Docker `glitchtip-network` — un reverse proxy central (nginx u otro) se une a esa red y lo resuelve por nombre de contenedor (`glitchtip-web:8000`). Además se publica en `127.0.0.1:8000` (solo loopback, no accesible desde fuera del host) para clientes que no son contenedores — ver "Clientes nativos (PM2, procesos sin Docker)" más abajo.
 
 1. `cp .env.prod.example .env.prod` y completar todo (acá no hay defaults, `compose.prod.yml` exige explícitamente `SECRET_KEY`, `GLITCHTIP_DOMAIN` y el resto):
    - `SECRET_KEY`: `openssl rand -hex 32`
@@ -70,6 +70,18 @@ GlitchTip corre sobre Django, que separa el `PATH_INFO` (lo que nginx reenvía) 
    CSRF_TRUSTED_ORIGINS=https://tu-dominio.com
    ```
    `GLITCHTIP_DOMAIN` va solo con protocolo+host — el path lo agrega `BASE_PATH` aparte.
+
+### Clientes nativos (PM2, procesos sin Docker)
+
+Una app que corre como proceso nativo en el **mismo host** que este stack (ej. con PM2, sin contenedor) no puede resolver `glitchtip-web` por DNS de Docker ni unirse a `glitchtip-network`. Tampoco debería usar el dominio público: si el host resuelve su propio dominio hacia afuera, muchos proveedores no permiten el *hairpin NAT* (el tráfico sale a internet y no puede volver a entrar al mismo host — se ve como timeout/socket hang up).
+
+La solución es el puerto publicado en loopback (`127.0.0.1:8000`, ver arriba). El DSN para estos clientes:
+
+```
+SENTRY_DSN=http://<public_key>@127.0.0.1:8000/<project_id>
+```
+
+Sin `/glitchtip` (no pasa por nginx) y sin TLS (loopback, no hace falta).
 
 ## Variables de entorno
 

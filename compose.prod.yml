@@ -63,4 +63,8 @@ services:
       - glitchtip-uploads:/code/uploads
     networks:
       - glitchtip-network
-    # Sin ports: solo accesible vía glitchtip-network, que se une nginx-reverse-proxy (red externa desde ese lado)
+    ports:
+      # Loopback: para procesos nativos del mismo host (ej. apps con PM2, no
+      # dockerizadas) que no pueden resolver glitchtip-web por DNS de Docker
+      # ni unirse a glitchtip-network. No es alcanzable desde fuera del host.
+      - "127.0.0.1:8000:8000"
