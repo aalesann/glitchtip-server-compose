@@ -14,6 +14,10 @@ x-environment: &default-environment
   EMAIL_URL: ${EMAIL_URL:-consolemail://}
   GLITCHTIP_DOMAIN: "${GLITCHTIP_DOMAIN:?Definí GLITCHTIP_DOMAIN en tu .env, ej. https://glitchtip.tu-dominio.com}"
   DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL}
+  # Opcionales: solo si GlitchTip corre bajo un subpath (ej. /glitchtip) en vez
+  # de un subdominio propio — ver sección "Subpath" del README
+  BASE_PATH: ${BASE_PATH:-}
+  CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
   ENABLE_ADMIN: "False"
   ENABLE_OPENAPI: "False"
 

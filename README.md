@@ -43,7 +43,33 @@ En producción **no se publica ningún puerto al host** — `compose.prod.yml` d
    docker compose -f compose.prod.yml --env-file .env.prod up -d
    ```
 
-3. En el compose del reverse proxy central, declarar `glitchtip-network` como red externa (`external: true`, mismo `name: glitchtip-network` que define este stack) y sumarla a la lista de `networks` del servicio de nginx. Agregar el `upstream`/`location` correspondiente apuntando a `glitchtip-web:8000`, con un subdominio propio (no un path-prefix — GlitchTip, al ser Django, no está pensado para vivir bajo un subpath sin configuración extra).
+3. En el compose del reverse proxy central, declarar `glitchtip-network` como red externa (`external: true`, mismo `name: glitchtip-network` que define este stack) y sumarla a la lista de `networks` del servicio de nginx. Agregar el `upstream`/`location` correspondiente apuntando a `glitchtip-web:8000`.
+
+   - **Con subdominio propio** (recomendado si podés): `location / { proxy_pass http://glitchtip_web; ... }` en un `server` nuevo para ese subdominio. No hace falta `BASE_PATH`.
+   - **Bajo un path del dominio central** (si no controlás el DNS/dominio y solo podés sumar un `location` al `server` existente): ver sección "Subpath" abajo.
+
+### Subpath (ej. `https://tu-dominio.com/glitchtip/`)
+
+GlitchTip corre sobre Django, que separa el `PATH_INFO` (lo que nginx reenvía) del `SCRIPT_NAME` (el prefijo que Django antepone al generar URLs absolutas). Para que ambas partes coincidan:
+
+1. nginx tiene que sacar el prefijo antes de reenviar — la barra final en `proxy_pass` es lo que hace ese strip:
+   ```nginx
+   location /glitchtip/ {
+       proxy_pass http://glitchtip_web/;
+       proxy_set_header Host $host;
+       proxy_set_header X-Real-IP $remote_addr;
+       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+       proxy_set_header X-Forwarded-Proto $scheme;
+       client_max_body_size 40M;
+   }
+   ```
+2. GlitchTip necesita saber ese mismo prefijo para reconstruirlo en los links que genera (`BASE_PATH`, sin barra final):
+   ```env
+   GLITCHTIP_DOMAIN=https://tu-dominio.com
+   BASE_PATH=/glitchtip
+   CSRF_TRUSTED_ORIGINS=https://tu-dominio.com
+   ```
+   `GLITCHTIP_DOMAIN` va solo con protocolo+host — el path lo agrega `BASE_PATH` aparte.
 
 ## Variables de entorno
 
@@ -56,6 +82,8 @@ En producción **no se publica ningún puerto al host** — `compose.prod.yml` d
 | `GLITCHTIP_DOMAIN` | default `http://localhost:8000` | **requerida**, sin default | URL pública completa, con esquema |
 | `EMAIL_URL` | default `consolemail://` (los mails se imprimen en los logs, no hace falta SMTP real) | requerida (SMTP real) | Formato `smtp://usuario:password@host:puerto` |
 | `DEFAULT_FROM_EMAIL` | default `dev@localhost` | requerida | Remitente de los mails que envía GlitchTip |
+| `BASE_PATH` | no usado | opcional | Solo si corre bajo subpath (ej. `/glitchtip`, sin barra final) — ver sección "Subpath" |
+| `CSRF_TRUSTED_ORIGINS` | no usado | requerida si usás `BASE_PATH` | Origen completo con esquema (ej. `https://tu-dominio.com`) |
 
 ## Troubleshooting
 
