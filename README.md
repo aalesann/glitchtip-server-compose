@@ -52,26 +52,34 @@ En producción, `glitchtip-web` es alcanzable principalmente vía la red Docker 
 
 ### Subpath (ej. `https://tu-dominio.com/glitchtip/`)
 
-GlitchTip corre sobre Django, que separa el `PATH_INFO` (lo que nginx reenvía) del `SCRIPT_NAME` (el prefijo que Django antepone al generar URLs absolutas). Para que ambas partes coincidan:
+`BASE_PATH` **solo no alcanza**. Hacen falta tres piezas juntas:
 
-1. nginx tiene que sacar el prefijo antes de reenviar — la barra final en `proxy_pass` es lo que hace ese strip:
+1. nginx saca el prefijo antes de reenviar (la barra final en `proxy_pass`):
    ```nginx
    location /glitchtip/ {
        proxy_pass http://glitchtip_web/;
        proxy_set_header Host $host;
-       proxy_set_header X-Real-IP $remote_addr;
        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-       proxy_set_header X-Forwarded-Proto $scheme;
        client_max_body_size 40M;
    }
    ```
-2. GlitchTip necesita saber ese mismo prefijo para reconstruirlo en los links que genera (`BASE_PATH`, sin barra final):
+2. El dominio incluye el subpath — al contrario de lo que dice la doc oficial:
    ```env
-   GLITCHTIP_DOMAIN=https://tu-dominio.com
+   GLITCHTIP_DOMAIN=https://tu-dominio.com/glitchtip
    BASE_PATH=/glitchtip
    CSRF_TRUSTED_ORIGINS=https://tu-dominio.com
    ```
-   `GLITCHTIP_DOMAIN` va solo con protocolo+host — el path lo agrega `BASE_PATH` aparte.
+3. Una regla a nivel `server` que colapsa el prefijo duplicado:
+   ```nginx
+   rewrite ^/glitchtip/glitchtip/(.*)$ /glitchtip/$1 last;
+   ```
+
+Sin el paso 2 quedan rotos los DSN de cada proyecto nuevo y los enlaces de todos
+los mails (invitación, alertas, uptime). Sin el paso 3, los endpoints que usan
+`reverse()` duplican el prefijo.
+
+**El detalle completo, con la causa de cada defecto y cómo reproducirlo, está en
+[docs/despliegue-subpath.md](docs/despliegue-subpath.md).**
 
 ### Clientes nativos (PM2, procesos sin Docker)
 
@@ -97,7 +105,7 @@ Sin `/glitchtip` (no pasa por nginx) y sin TLS (loopback, no hace falta).
 | `ALLOWED_HOSTS` | default `*` | recomendada | Hosts aceptados, separados por coma. Sin esto queda en `*` y Django avisa en cada arranque. Incluir también los hosts internos desde los que se publican eventos (ej. `glitchtip-web`, `127.0.0.1`) |
 | `EMAIL_URL` | default `consolemail://` (los mails se imprimen en los logs, no hace falta SMTP real) | requerida (SMTP real) | Formato `smtp+tls://usuario:password@host:587` — con `smtp://` no hay STARTTLS y SES devuelve `530` |
 | `DEFAULT_FROM_EMAIL` | default `dev@localhost` | requerida | Remitente de los mails que envía GlitchTip |
-| `BASE_PATH` | no usado | opcional | Solo si corre bajo subpath (ej. `/glitchtip`, sin barra final) — ver sección "Subpath" |
+| `BASE_PATH` | no usado | opcional | Solo si corre bajo subpath (ej. `/glitchtip`, sin barra final). Requiere además que `GLITCHTIP_DOMAIN` incluya el path y una regla `rewrite` en nginx — ver [docs/despliegue-subpath.md](docs/despliegue-subpath.md) |
 | `CSRF_TRUSTED_ORIGINS` | no usado | requerida si usás `BASE_PATH` | Origen completo con esquema (ej. `https://tu-dominio.com`) |
 | `ENABLE_USER_REGISTRATION` | default `True` | `False` si la instancia da a internet | Con `False` nadie puede registrarse solo; se suma gente por invitación, y solo a emails que ya tengan cuenta |
 | `ENABLE_ORGANIZATION_CREATION` | default `False` | opcional | Permite que cada usuario cree su propia organización. La primera organización del servidor siempre se puede crear, aunque esté en `False` |
@@ -112,6 +120,7 @@ Sin `/glitchtip` (no pasa por nginx) y sin TLS (loopback, no hace falta).
 | Al crear una organización la UI muestra `[object Object]` y la API devuelve `403 Organization creation is not open` | `ENABLE_ORGANIZATION_CREATION` está en `False` (su default). Solo la **primera** organización del servidor es libre; después únicamente un superusuario puede crear más. | Poner `ENABLE_ORGANIZATION_CREATION=True` si querés que cada usuario arme la suya, o marcar superusuario a la cuenta administradora. El `[object Object]` es el frontend que no sabe renderizar el cuerpo del 403. |
 | Una variable del `.env` no llega al contenedor y no se entiende por qué | Una variable exportada en el shell (ej. `SECRET_KEY` en `~/.bashrc`) tiene **precedencia** sobre `--env-file` en Docker Compose, y lo pisa en silencio. | Verificar siempre el valor efectivo con `docker exec glitchtip-web printenv NOMBRE_VAR`, o revisar `docker compose -f compose.prod.yml --env-file .env.prod config`. |
 | Todos los clientes reciben `400 Bad Request` después de fijar `ALLOWED_HOSTS` | Falta en la lista algún host desde el que se publican eventos. Django compara contra el header `Host`, que no es el dominio público cuando el cliente entra por la red interna de Docker o por loopback. | Incluir también el nombre del servicio (`glitchtip-web`) y `127.0.0.1`/`localhost` además del dominio público. Django ignora el puerto al comparar. |
+| El enlace de invitación que llega por mail da 404, o el DSN de un proyecto nuevo no recibe eventos | Despliegue bajo subpath con `BASE_PATH` pero `GLITCHTIP_DOMAIN` sin el path. | Ver [docs/despliegue-subpath.md](docs/despliegue-subpath.md). Una invitación ya emitida se rescata agregándole el prefijo al enlace a mano. |
 
 ## Estructura
 
@@ -119,6 +128,8 @@ Sin `/glitchtip` (no pasa por nginx) y sin TLS (loopback, no hace falta).
 .
 ├── compose.yml            # Desarrollo — publica el puerto 8000 al host
 ├── compose.prod.yml       # Producción — sin puertos, solo red Docker
-├── .env.example            # Plantilla de variables (dev)
-└── .env.prod.example       # Plantilla de variables (prod)
+├── .env.example           # Plantilla de variables (dev)
+├── .env.prod.example      # Plantilla de variables (prod)
+└── docs/
+    └── despliegue-subpath.md   # Correr bajo un path del dominio central
 ```
