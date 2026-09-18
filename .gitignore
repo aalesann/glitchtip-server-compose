@@ -1,2 +1,39 @@
+# ---------------------------------------------------------------------------
+# Repositorio PÚBLICO: acá solo viajan plantillas, nunca valores reales.
+# Criterio: se ignora todo archivo de entorno y solo se readmiten los .example.
+# ---------------------------------------------------------------------------
+
+# Entornos: ignorar cualquier .env (.env, .env.prod, .env.local, .env.prod.bak-*, etc.)
 .env
-.env.prod
+.env.*
+
+# ...salvo las plantillas, que son lo único que debe llegar a GitHub
+!.env.example
+!.env.prod.example
+
+# Backups y copias locales de configuración (suelen contener secretos)
+*.bak
+*.bak-*
+*.backup
+*.orig
+*.save
+*~
+
+# Overrides locales de compose (no son plantillas)
+compose.override.yml
+compose.*.local.yml
+docker-compose.override.yml
+
+# Credenciales sueltas
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+
+# Ruido del sistema y editores
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

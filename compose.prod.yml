@@ -13,6 +13,7 @@ x-environment: &default-environment
   SECRET_KEY: "${SECRET_KEY:?Definí SECRET_KEY en tu .env, ej. openssl rand -hex 32}"
   EMAIL_URL: ${EMAIL_URL:-consolemail://}
   GLITCHTIP_DOMAIN: "${GLITCHTIP_DOMAIN:?Definí GLITCHTIP_DOMAIN en tu .env, ej. https://glitchtip.tu-dominio.com}"
+  ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
   DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL}
   # Opcionales: solo si GlitchTip corre bajo un subpath (ej. /glitchtip) en vez
   # de un subdominio propio — ver sección "Subpath" del README
@@ -20,6 +21,11 @@ x-environment: &default-environment
   CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
   ENABLE_ADMIN: "False"
   ENABLE_OPENAPI: "False"
+  # Instancia expuesta a internet: el registro público va cerrado por defecto.
+  # La creación de organizaciones queda abierta a las cuentas ya existentes,
+  # para que cada dev tenga su propia org con los errores de su localhost.
+  ENABLE_USER_REGISTRATION: ${ENABLE_USER_REGISTRATION:-False}
+  ENABLE_ORGANIZATION_CREATION: ${ENABLE_ORGANIZATION_CREATION:-False}
 
 services:
   glitchtip-postgres:
