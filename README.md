@@ -26,6 +26,8 @@ Imagen oficial `glitchtip/glitchtip:6` con `SERVER_ROLE: all_in_one` (web + work
 
 4. Crear un proyecto por cada aplicación/componente que vaya a reportar errores acá (por ejemplo `sgp-backend` y `sgp-frontend`). Cada proyecto expone un DSN (`http://<public_key>@host:puerto/<project_id>`) para pegar en la app consumidora.
 
+   Para verificar que quedó bien conectado, ver [docs/probar-issues.md](docs/probar-issues.md).
+
 > Si una app consumidora corre dentro de otro contenedor Docker (no en el browser), el DSN necesita `host.docker.internal` en vez de `localhost` como host — GlitchTip corre publicado en el host, no en la red interna de esa otra app.
 
 ## Producción
@@ -137,5 +139,6 @@ Sin `/glitchtip` (no pasa por nginx) y sin TLS (loopback, no hace falta).
 ├── .env.example           # Plantilla de variables (dev)
 ├── .env.prod.example      # Plantilla de variables (prod)
 └── docs/
-    └── despliegue-subpath.md   # Correr bajo un path del dominio central
+    ├── despliegue-subpath.md   # Correr bajo un path del dominio central
+    └── probar-issues.md        # Generar errores de prueba para verificar un proyecto
 ```

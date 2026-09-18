@@ -170,12 +170,16 @@ da 404. Por eso el paso 4.
 **Advertencia sobre el esquema.** Esa misma llamada toma el esquema del request.
 `SECURE_PROXY_SSL_HEADER` no está definido en GlitchTip, así que Django ignora
 el header `X-Forwarded-Proto` y ve `http` cuando el TLS se termina aguas arriba.
-El enlace del correo sale entonces como `http://`. Si el terminador TLS no
-redirige a https por su cuenta, el reseteo de contraseña queda degradado y no
-hay variable de entorno para corregirlo: habría que definir
-`SECURE_PROXY_SSL_HEADER` en los settings. Conviene probarlo desde un navegador
-externo, porque desde el propio host el dominio no suele ser alcanzable (ver
-"Clientes nativos" en el README: hairpin NAT).
+El enlace del correo sale entonces como `http://`. Eso **no** es
+necesariamente un problema: si el terminador TLS redirige a https por su cuenta,
+el flujo funciona igual (verificado en la práctica: un reseteo de contraseña
+completo, de punta a punta, sobre un despliegue con TLS terminado aguas arriba).
+
+Conviene confirmarlo en tu propio despliegue desde un navegador externo, porque
+desde el host del servidor el dominio no suele ser alcanzable (ver "Clientes
+nativos" en el README: hairpin NAT). Si tu terminador **no** redirige, no hay
+variable de entorno para corregirlo: habría que definir
+`SECURE_PROXY_SSL_HEADER` en los settings de Django.
 
 ## El efecto secundario, y por qué el rewrite
 
