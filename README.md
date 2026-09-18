@@ -35,7 +35,9 @@ En producción, `glitchtip-web` es alcanzable principalmente vía la red Docker 
 1. `cp .env.prod.example .env.prod` y completar todo (acá no hay defaults, `compose.prod.yml` exige explícitamente `SECRET_KEY`, `GLITCHTIP_DOMAIN` y el resto):
    - `SECRET_KEY`: `openssl rand -hex 32`
    - `GLITCHTIP_DOMAIN`: URL pública completa, con esquema (`https://glitchtip.tu-dominio.com`)
-   - `EMAIL_URL`: SMTP real (`smtp://usuario:password@host:puerto`) — sin esto no salen los mails de invitación/reset de contraseña
+   - `EMAIL_URL`: SMTP real (`smtp+tls://usuario:password@host:587`) — sin esto no salen los mails de invitación/reset de contraseña.
+     El esquema **debe** ser `smtp+tls://` en el 587 (o `smtp+ssl://` en el 465): con `smtp://` a secas Django no negocia
+     STARTTLS y proveedores como AWS SES rechazan el login con `530 Must issue a STARTTLS command first`
    - `DEFAULT_FROM_EMAIL`
 
 2. Levantar:
@@ -92,10 +94,13 @@ Sin `/glitchtip` (no pasa por nginx) y sin TLS (loopback, no hace falta).
 | `POSTGRES_DB` | requerida | requerida | Nombre de la base |
 | `SECRET_KEY` | default de dev | **requerida**, sin default | Clave de Django — `openssl rand -hex 32` |
 | `GLITCHTIP_DOMAIN` | default `http://localhost:8000` | **requerida**, sin default | URL pública completa, con esquema |
-| `EMAIL_URL` | default `consolemail://` (los mails se imprimen en los logs, no hace falta SMTP real) | requerida (SMTP real) | Formato `smtp://usuario:password@host:puerto` |
+| `ALLOWED_HOSTS` | default `*` | recomendada | Hosts aceptados, separados por coma. Sin esto queda en `*` y Django avisa en cada arranque. Incluir también los hosts internos desde los que se publican eventos (ej. `glitchtip-web`, `127.0.0.1`) |
+| `EMAIL_URL` | default `consolemail://` (los mails se imprimen en los logs, no hace falta SMTP real) | requerida (SMTP real) | Formato `smtp+tls://usuario:password@host:587` — con `smtp://` no hay STARTTLS y SES devuelve `530` |
 | `DEFAULT_FROM_EMAIL` | default `dev@localhost` | requerida | Remitente de los mails que envía GlitchTip |
 | `BASE_PATH` | no usado | opcional | Solo si corre bajo subpath (ej. `/glitchtip`, sin barra final) — ver sección "Subpath" |
 | `CSRF_TRUSTED_ORIGINS` | no usado | requerida si usás `BASE_PATH` | Origen completo con esquema (ej. `https://tu-dominio.com`) |
+| `ENABLE_USER_REGISTRATION` | default `True` | `False` si la instancia da a internet | Con `False` nadie puede registrarse solo; se suma gente por invitación, y solo a emails que ya tengan cuenta |
+| `ENABLE_ORGANIZATION_CREATION` | default `False` | opcional | Permite que cada usuario cree su propia organización. La primera organización del servidor siempre se puede crear, aunque esté en `False` |
 
 ## Troubleshooting
 
@@ -103,6 +108,10 @@ Sin `/glitchtip` (no pasa por nginx) y sin TLS (loopback, no hace falta).
 |---------|-------|----------|
 | `glitchtip-postgres` no pasa el healthcheck / no arranca | Desde `postgres:18` la imagen oficial espera el volumen montado en `/var/lib/postgresql` (sin `/data` al final) — layout nuevo compatible con `pg_ctlcluster`. Un mount en `/var/lib/postgresql/data` no arranca. | Ya está corregido en ambos compose de este repo. Si lo cambiaste, revertí el mount y `docker compose down -v && docker compose up -d` (perdés los datos del volumen, solo aceptable si todavía no tenés nada real cargado). |
 | El proyecto consumidor no reporta nada aunque el DSN esté bien | Está usando `localhost` desde un contenedor Docker, o `host.docker.internal` desde el browser | Revisar la nota del paso 4 de "Desarrollo local" — el host del DSN depende de dónde corre el código que llama a `Sentry.init`, no de dónde corre GlitchTip. |
+| No llega ningún mail (invitaciones, reset de contraseña) y no hay error visible en la UI | `EMAIL_URL` con esquema `smtp://`: Django deja `EMAIL_USE_TLS=False`, no negocia STARTTLS y el servidor corta el login. Con AWS SES el error es `530 Must issue a STARTTLS command first`. | Usar `smtp+tls://` (puerto 587) o `smtp+ssl://` (465). Probar el envío real con:<br>`docker exec glitchtip-web python -c "import django,os;os.environ.setdefault('DJANGO_SETTINGS_MODULE','glitchtip.settings');django.setup();from django.core.mail import send_mail;print(send_mail('test','test',None,['vos@dominio.com']))"` |
+| Al crear una organización la UI muestra `[object Object]` y la API devuelve `403 Organization creation is not open` | `ENABLE_ORGANIZATION_CREATION` está en `False` (su default). Solo la **primera** organización del servidor es libre; después únicamente un superusuario puede crear más. | Poner `ENABLE_ORGANIZATION_CREATION=True` si querés que cada usuario arme la suya, o marcar superusuario a la cuenta administradora. El `[object Object]` es el frontend que no sabe renderizar el cuerpo del 403. |
+| Una variable del `.env` no llega al contenedor y no se entiende por qué | Una variable exportada en el shell (ej. `SECRET_KEY` en `~/.bashrc`) tiene **precedencia** sobre `--env-file` en Docker Compose, y lo pisa en silencio. | Verificar siempre el valor efectivo con `docker exec glitchtip-web printenv NOMBRE_VAR`, o revisar `docker compose -f compose.prod.yml --env-file .env.prod config`. |
+| Todos los clientes reciben `400 Bad Request` después de fijar `ALLOWED_HOSTS` | Falta en la lista algún host desde el que se publican eventos. Django compara contra el header `Host`, que no es el dominio público cuando el cliente entra por la red interna de Docker o por loopback. | Incluir también el nombre del servicio (`glitchtip-web`) y `127.0.0.1`/`localhost` además del dominio público. Django ignora el puerto al comparar. |
 
 ## Estructura
 
