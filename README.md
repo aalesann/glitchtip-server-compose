@@ -52,7 +52,7 @@ En producción, `glitchtip-web` es alcanzable principalmente vía la red Docker 
 
 ### Subpath (ej. `https://tu-dominio.com/glitchtip/`)
 
-`BASE_PATH` **solo no alcanza**. Hacen falta tres piezas juntas:
+`BASE_PATH` **solo no alcanza**. Hacen falta cuatro piezas juntas:
 
 1. nginx saca el prefijo antes de reenviar (la barra final en `proxy_pass`):
    ```nginx
@@ -73,10 +73,16 @@ En producción, `glitchtip-web` es alcanzable principalmente vía la red Docker 
    ```nginx
    rewrite ^/glitchtip/glitchtip/(.*)$ /glitchtip/$1 last;
    ```
+4. Dos reglas más para las rutas que allauth emite por correo:
+   ```nginx
+   rewrite ^/(reset-password(?:/.*)?)$   /glitchtip/$1 last;
+   rewrite ^/(profile/confirm-email/.*)$ /glitchtip/$1 last;
+   ```
 
 Sin el paso 2 quedan rotos los DSN de cada proyecto nuevo y los enlaces de todos
 los mails (invitación, alertas, uptime). Sin el paso 3, los endpoints que usan
-`reverse()` duplican el prefijo.
+`reverse()` duplican el prefijo. Sin el paso 4, el reseteo de contraseña y la
+confirmación de email dan 404.
 
 **El detalle completo, con la causa de cada defecto y cómo reproducirlo, está en
 [docs/despliegue-subpath.md](docs/despliegue-subpath.md).**

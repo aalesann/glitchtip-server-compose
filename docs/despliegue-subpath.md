@@ -4,7 +4,7 @@ Cómo correr GlitchTip en un path del dominio central (ej.
 `https://tu-dominio.com/glitchtip/`) en vez de un subdominio propio.
 
 > **Si podés usar un subdominio, usalo.** El soporte de subpath de GlitchTip es
-> parcial y esta guía existe para rodear tres defectos distintos. Con subdominio
+> parcial y esta guía existe para rodear cuatro defectos distintos. Con subdominio
 > propio nada de esto hace falta: `GLITCHTIP_DOMAIN=https://glitchtip.tu-dominio.com`,
 > sin `BASE_PATH`, y listo.
 
@@ -64,9 +64,20 @@ cuando el TLS se termina aguas arriba (nginx escuchando en el 80). El redirect
 mandaría al usuario de https a http. Con `last` se resuelve internamente, sin
 round-trip ni esquema de por medio.
 
+### 4. Reencaminar las rutas de allauth
+
+```nginx
+rewrite ^/(reset-password(?:/.*)?)$      /glitchtip/$1 last;
+rewrite ^/(profile/confirm-email/.*)$    /glitchtip/$1 last;
+```
+
+También a nivel de `server`. Son las rutas de `HEADLESS_FRONTEND_URLS` que
+allauth emite por correo (reseteo de contraseña, confirmación de email) y que
+salen sin el prefijo — ver el defecto (d).
+
 ## Por qué hace falta todo esto
 
-Son tres defectos independientes. Ninguno está documentado upstream.
+Son cuatro defectos independientes. Ninguno está documentado upstream.
 
 ### a) Los mails salen sin el prefijo
 
@@ -136,6 +147,36 @@ Es la evidencia más fuerte de que el diseño *espera* el subpath en
 `GLITCHTIP_DOMAIN`. Sin él, cada proyecto nuevo muestra en la UI un DSN que no
 recibe eventos y hay que corregirlo a mano.
 
+### d) Los enlaces de allauth no pasan por reverse() ni por el dominio
+
+El reseteo de contraseña y la confirmación de email los emite `allauth`, que
+arma la URL con `request.build_absolute_uri()` sobre las rutas de
+`HEADLESS_FRONTEND_URLS` (en `glitchtip/settings.py`):
+
+```python
+HEADLESS_FRONTEND_URLS = {
+    "account_reset_password": "/reset-password",
+    "account_confirm_email": "/profile/confirm-email/{key}/",
+    "account_reset_password_from_key": "/reset-password/set-new-password/{key}",
+    ...
+}
+```
+
+Son rutas absolutas desde la raíz. `build_absolute_uri()` no antepone el
+`SCRIPT_NAME`, y como no pasan por `reverse()` ni por `GLITCHTIP_URL`, ni
+`BASE_PATH` ni el path del dominio las alcanzan. El enlace sale sin prefijo y
+da 404. Por eso el paso 4.
+
+**Advertencia sobre el esquema.** Esa misma llamada toma el esquema del request.
+`SECURE_PROXY_SSL_HEADER` no está definido en GlitchTip, así que Django ignora
+el header `X-Forwarded-Proto` y ve `http` cuando el TLS se termina aguas arriba.
+El enlace del correo sale entonces como `http://`. Si el terminador TLS no
+redirige a https por su cuenta, el reseteo de contraseña queda degradado y no
+hay variable de entorno para corregirlo: habría que definir
+`SECURE_PROXY_SSL_HEADER` en los settings. Conviene probarlo desde un navegador
+externo, porque desde el propio host el dominio no suele ser alcanzable (ver
+"Clientes nativos" en el README: hairpin NAT).
+
 ## El efecto secundario, y por qué el rewrite
 
 Meter el path en el dominio arregla (a), (b) y (c), pero rompe los endpoints que
@@ -154,7 +195,7 @@ legítima en ningún caso, así que la regla no tiene falsos positivos.
 
 ## Verificación
 
-Después de aplicar los tres pasos:
+Después de aplicar los cuatro pasos:
 
 ```bash
 # El DSN debe incluir el subpath
@@ -170,6 +211,14 @@ print(ProjectKey.objects.first().get_dsn())
 curl -s -o /dev/null -w '%{http_code} redirect=%{redirect_url}\n' \
   -H 'Host: tu-dominio.com' \
   'http://127.0.0.1/glitchtip/glitchtip/api/settings/'
+
+# Las rutas de allauth deben dar 200 (antes del paso 4 daban 404)
+for p in /reset-password \
+         /reset-password/set-new-password/XXX \
+         /profile/confirm-email/XXX/ ; do
+  printf '%-40s -> ' "$p"
+  curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: tu-dominio.com' "http://127.0.0.1$p"
+done
 ```
 
 ## Rescatar una invitación ya emitida
